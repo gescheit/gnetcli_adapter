@@ -473,9 +473,8 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
         command_groups: list[tuple[str, CommandList]]= []
         if isinstance(cmds, dict): # PC
             files = self._get_files(cmds)
-            if args.entire_reload.value == "yes":
-                for file, cmdlist in self._get_reload_cmds(cmds).items():
-                    command_groups.append((f"Reload {file}", cmdlist))
+            for file, cmdlist in self._get_reload_cmds(cmds).items():
+                command_groups.append((f"Reload {file}", cmdlist))
         else:
             files = {}
             # treat each command as a group
