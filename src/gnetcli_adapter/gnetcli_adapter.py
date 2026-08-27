@@ -382,9 +382,9 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
                 max_parallel = arg_max_parallel
         except Exception:
             pass
-        deploy_items = deploy_cmds.items()
+        deploy_items = list(deploy_cmds.items())
         if max_parallel == 1:
-            result = await self.serial_deploy(api, deploy_items, args, progress_bar)
+            result = await self.serial_deploy(api, deploy_items, args, progress_bar, dev_credentials)
         else:
             result = await gather_with_concurrency(
                 max_parallel,
@@ -438,8 +438,9 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
         deploy_items: Iterable[tuple[Device, CommandList]],
         args: DeployOptions,
         progress_bar: ProgressBar | None = None,
-    ):
-        res = {}
+        dev_credentials: Credentials | None = None,
+    ) -> list[Exception | None]:
+        res: list[Exception | None] = []
         for device, cmds in deploy_items:
             if progress_bar:
                 try:
@@ -450,8 +451,8 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
                             break
                 except Exception:
                     pass
-            dev_res = await self.deploy(api, device, cmds, args, progress_bar)
-            res[device] = dev_res
+            dev_res = await self.deploy(api, device, cmds, args, progress_bar, dev_credentials)
+            res.append(dev_res)
         return res
 
     async def deploy(
