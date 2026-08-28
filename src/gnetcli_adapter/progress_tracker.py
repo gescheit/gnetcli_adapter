@@ -104,6 +104,7 @@ class ProgressBarTracker(ProgressTracker):
         self.progress_bar.set_progress(self.tile, self.done_steps, self.total_steps)
 
     def run_command(self, cmd: str):
+        self.last_cmd = cmd
         self.progress_bar.add_content(self.tile, f"cmd: {cmd}")
         self.progress_bar.set_progress(
             self.tile,
@@ -247,7 +248,7 @@ class LogProgressTracker(ProgressTracker):
         logger.error(f"{self.fqdn} - {error}")
 
     def command_done_error_suppressed(self, error: str) -> None:
-        logger.info(f"{self.fqdn} - {error}")
+        logger.info(f"{self.fqdn} - Error (suppressed): {error}")
 
     def finish_ok(self, notification: str) -> None:
         logger.info(f"{self.fqdn} - finished with success - {notification}")
