@@ -285,7 +285,7 @@ class GnetcliFetcher(Fetcher, AdapterWithConfig, AdapterWithName, ApiMaker):
             dev_result.append(res.out)
         return b"\n".join(dev_result).decode()
 
-    async def adownload_dev(self, api: Gnetcli, device: Device, files: List[str]) -> Dict[str, str]:
+    async def adownload_dev(self, api: Gnetcli, device: Device, files: List[str]) -> Dict[str, Optional[str]]:
         gnetcli_device = breed_to_device.get(device.breed, device.breed)
         ip = get_device_ip(device)
         downloaded = await api.download(
@@ -297,9 +297,15 @@ class GnetcliFetcher(Fetcher, AdapterWithConfig, AdapterWithName, ApiMaker):
                 ip=ip,
             ),
         )
-        res: Dict[str, str] = {}
+        res: Dict[str, Optional[str]] = {}
         for file, file_data in downloaded.items():
-            res[file] = file_data.content.decode()
+            if file_data.status == pb.FileStatus_ok:
+                res[file] = file_data.content.decode()
+            elif file_data.status == pb.FileStatus_not_found:
+                res[file] = None
+            else:
+                status = pb.FileStatus.Name(file_data.status)
+                raise RuntimeError(f"download {file!r} failed with status {status}")
         return res
 
 
