@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from annet.annlib.command import CommandList
+import gnetclisdk.proto.server_pb2 as pb
+from annet.annlib.command import Command, CommandList
+from gnetclisdk.client import HostParams
 
 from gnetcli_adapter.gnetcli_adapter import GnetcliDeployer, GnetcliFetcher
 
@@ -65,3 +68,42 @@ def test_serial_deploy_preserves_credentials_and_results():
         credentials = call.args[5]
         assert credentials.login == "device-login"
         assert credentials.password == "device-password"
+
+
+def test_suppress_errors_does_not_fail_deploy_and_continues_commands():
+    deployer = GnetcliDeployer(url="127.0.0.1:50050")
+    suppressed_result = pb.CMDResult(status=1, error=b"ignored error")
+    successful_result = pb.CMDResult(status=0, out=b"done")
+    session = Mock()
+    session.cmd = AsyncMock(side_effect=[suppressed_result, successful_result])
+
+    @asynccontextmanager
+    async def cmd_session(**_kwargs):
+        yield session
+
+    api = Mock()
+    api.cmd_session = cmd_session
+    tracker = Mock()
+    commands = CommandList(
+        [
+            Command("ignored command", suppress_errors=True),
+            Command("next command"),
+        ]
+    )
+
+    seen_exc, results = asyncio.run(
+        deployer._deploy(
+            api=api,
+            device=Mock(fqdn="device.example.net"),
+            host_params=HostParams(device="cisco"),
+            command_groups=[("Run command", commands)],
+            files={},
+            tracker=tracker,
+        )
+    )
+
+    assert seen_exc == []
+    assert results == [successful_result]
+    assert session.cmd.await_count == 2
+    tracker.command_done_error_suppressed.assert_called_once_with("ignored error")
+    tracker.command_done_error.assert_not_called()
