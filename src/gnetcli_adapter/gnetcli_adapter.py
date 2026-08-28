@@ -560,14 +560,13 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
                         if cmd.suppress_errors:
                             tracker.command_done_error_suppressed(error)
                             continue
+                        if cmd.suppress_nonzero:
+                            tracker.command_done_error_suppressed(error)
+                            break  # go to next command group
                         e = Exception("cmd %s error %s status %s", cmd, res.error, res.status)
                         seen_exc.append(e)
-                        if cmd.suppress_nonzero:
-                            tracker.command_done_ok(res)
-                            break  # go to next command group
-                        else:
-                            tracker.command_done_error(error)
-                            return seen_exc, results
+                        tracker.command_done_error(error)
+                        return seen_exc, results
         return seen_exc, results
 
     def apply_deploy_rulebook(

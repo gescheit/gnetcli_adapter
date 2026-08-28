@@ -125,3 +125,51 @@ def test_suppress_errors_does_not_fail_deploy_and_continues_commands():
     assert session.cmd.await_count == 2
     tracker.command_done_error_suppressed.assert_called_once_with("ignored error")
     tracker.command_done_error.assert_not_called()
+
+
+def test_suppress_nonzero_does_not_fail_deploy_and_skips_command_group():
+    deployer = GnetcliDeployer(url="127.0.0.1:50050")
+    suppressed_result = pb.CMDResult(status=1, error=b"unsupported command")
+    successful_result = pb.CMDResult(status=0, out=b"done")
+    session = Mock()
+    session.cmd = AsyncMock(side_effect=[suppressed_result, successful_result])
+
+    @asynccontextmanager
+    async def cmd_session(**_kwargs):
+        yield session
+
+    api = Mock()
+    api.cmd_session = cmd_session
+    tracker = Mock()
+    command_groups = [
+        (
+            "First group",
+            CommandList(
+                [
+                    Command("unsupported command", suppress_nonzero=True),
+                    Command("must be skipped"),
+                ]
+            ),
+        ),
+        ("Second group", CommandList([Command("next group command")])),
+    ]
+
+    seen_exc, results = asyncio.run(
+        deployer._deploy(
+            api=api,
+            device=Mock(fqdn="device.example.net"),
+            host_params=HostParams(device="pc"),
+            command_groups=command_groups,
+            files={},
+            tracker=tracker,
+        )
+    )
+
+    assert seen_exc == []
+    assert results == [successful_result]
+    assert [call.kwargs["cmd"] for call in session.cmd.await_args_list] == [
+        "unsupported command",
+        "next group command",
+    ]
+    tracker.command_done_error_suppressed.assert_called_once_with("unsupported command")
+    tracker.command_done_error.assert_not_called()
