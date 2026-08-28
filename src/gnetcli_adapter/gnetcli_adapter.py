@@ -556,13 +556,17 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
                         tracker.command_done_ok(res)
                         results.append(res)
                     else:
+                        error = res.error.decode(errors="replace")
+                        if cmd.suppress_errors:
+                            tracker.command_done_error_suppressed(error)
+                            continue
                         e = Exception("cmd %s error %s status %s", cmd, res.error, res.status)
                         seen_exc.append(e)
                         if cmd.suppress_nonzero:
                             tracker.command_done_ok(res)
                             break  # go to next command group
                         else:
-                            tracker.command_done_error(res.error.decode())
+                            tracker.command_done_error(error)
                             return seen_exc, results
         return seen_exc, results
 
