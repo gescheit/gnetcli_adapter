@@ -42,7 +42,7 @@ except ImportError:
 
 breed_to_device = {
     "routeros": "ros",
-    "routeros7": "ros7",
+    "routeros7": "ros",
     "ios12": "cisco",
     "bcom-os": "bcomos",
     "pc": "pc",

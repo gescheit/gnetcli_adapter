@@ -24,6 +24,24 @@ def test_make_api_uses_url_without_starter():
     asyncio.run(run())
 
 
+def test_routeros7_uses_embedded_ros_device():
+    fetcher = GnetcliFetcher(url="127.0.0.1:50050")
+    device = SimpleNamespace(
+        breed="routeros7",
+        fqdn="router.example.net",
+        primary_ip=None,
+        interfaces=[],
+    )
+    api = Mock()
+    api.cmd = AsyncMock(return_value=pb.CMDResult(status=0, out=b"config"))
+
+    result = asyncio.run(fetcher.afetch_dev(api=api, device=device))
+
+    assert result == "config\nconfig\nconfig\nconfig"
+    assert api.cmd.await_count == 4
+    assert all(call.kwargs["host_params"].device == "ros" for call in api.cmd.await_args_list)
+
+
 def test_serial_deploy_preserves_credentials_and_results():
     deployer = GnetcliDeployer(
         url="127.0.0.1:50050",
