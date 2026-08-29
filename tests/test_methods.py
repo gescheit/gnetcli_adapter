@@ -6,8 +6,9 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import gnetclisdk.proto.server_pb2 as pb
+import pytest
 from annet.annlib.command import Command, CommandList
-from gnetclisdk.client import HostParams
+from gnetclisdk.client import File, HostParams
 
 from gnetcli_adapter.gnetcli_adapter import GnetcliDeployer, GnetcliFetcher
 
@@ -40,6 +41,42 @@ def test_routeros7_uses_embedded_ros_device():
     assert result == "config\nconfig\nconfig\nconfig"
     assert api.cmd.await_count == 4
     assert all(call.kwargs["host_params"].device == "ros" for call in api.cmd.await_args_list)
+
+
+def test_download_preserves_ok_and_not_found_file_statuses():
+    fetcher = GnetcliFetcher(url="127.0.0.1:50050")
+    device = SimpleNamespace(breed="pc", fqdn="host.example.net", primary_ip=None, interfaces=[])
+    api = Mock()
+    api.download = AsyncMock(
+        return_value={
+            "/etc/config": File(content=b"config", status=pb.FileStatus_ok),
+            "/etc/missing": File(content=b"", status=pb.FileStatus_not_found),
+        }
+    )
+
+    result = asyncio.run(
+        fetcher.adownload_dev(
+            api=api,
+            device=device,
+            files=["/etc/config", "/etc/missing"],
+        )
+    )
+
+    assert result == {"/etc/config": "config", "/etc/missing": None}
+
+
+@pytest.mark.parametrize(
+    "status",
+    [pb.FileStatus_notset, pb.FileStatus_error, pb.FileStatus_is_dir],
+)
+def test_download_rejects_unsuccessful_file_statuses(status):
+    fetcher = GnetcliFetcher(url="127.0.0.1:50050")
+    device = SimpleNamespace(breed="pc", fqdn="host.example.net", primary_ip=None, interfaces=[])
+    api = Mock()
+    api.download = AsyncMock(return_value={"/etc/config": File(content=b"", status=status)})
+
+    with pytest.raises(RuntimeError, match=pb.FileStatus.Name(status)):
+        asyncio.run(fetcher.adownload_dev(api=api, device=device, files=["/etc/config"]))
 
 
 def test_serial_deploy_preserves_credentials_and_results():
