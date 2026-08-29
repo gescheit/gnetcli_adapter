@@ -6,7 +6,7 @@ import base64
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 import getpass
 
 import annet.annlib.command
@@ -73,6 +73,8 @@ class AppSettings(BaseSettings):
     password: Optional[str] = None
     dev_login: Optional[str] = None
     dev_password: Optional[str] = None
+    dev_port: Optional[int] = Field(default=None, ge=1, le=65535)
+    streamer_type: Optional[Literal["ssh", "telnet"]] = None
     ssh_agent_enabled: bool = True
 
     def make_dev_credentials(self) -> Optional[Credentials]:
@@ -88,6 +90,23 @@ class AppSettings(BaseSettings):
             auth_token = base64.b64encode(b"%s:%s" % (self.login.encode(), self.password.encode())).strip().decode()
             return f"Basic {auth_token}"
         return None
+
+    def make_host_params(
+        self,
+        device: str,
+        ip: Optional[str],
+        credentials: Optional[Credentials] = None,
+    ) -> HostParams:
+        streamer_type = pb.StreamerType_ssh
+        if self.streamer_type == "telnet":
+            streamer_type = pb.StreamerType_telnet
+        return HostParams(
+            credentials=credentials,
+            device=device,
+            ip=ip,
+            port=self.dev_port,
+            streamer_type=streamer_type,
+        )
 
     @field_validator("*", mode="before")
     @classmethod
@@ -182,6 +201,8 @@ class GnetcliFetcher(Fetcher, AdapterWithConfig, AdapterWithName, ApiMaker):
         password: Optional[str] = None,
         dev_login: Optional[str] = None,
         dev_password: Optional[str] = None,
+        dev_port: Optional[int] = None,
+        streamer_type: Optional[Literal["ssh", "telnet"]] = None,
         ssh_agent_enabled: bool = True,
         server_path: Optional[str] = None,
         server_conf: Config = DEFAULT_GNETCLI_SERVER_CONF,
@@ -191,6 +212,8 @@ class GnetcliFetcher(Fetcher, AdapterWithConfig, AdapterWithName, ApiMaker):
             "password": password,
             "dev_login": dev_login,
             "dev_password": dev_password,
+            "dev_port": dev_port,
+            "streamer_type": streamer_type,
             "server_path": server_path,
             "url": url,
             "server_conf": server_conf,
@@ -274,10 +297,8 @@ class GnetcliFetcher(Fetcher, AdapterWithConfig, AdapterWithName, ApiMaker):
             res = await api.cmd(
                 hostname=device.fqdn,
                 cmd=cmd,
-                host_params=HostParams(
-                    credentials=self.conf.make_dev_credentials(),
-                    device=gnetcli_device,
-                    ip=ip,
+                host_params=self.conf.make_host_params(
+                    credentials=self.conf.make_dev_credentials(), device=gnetcli_device, ip=ip
                 ),
             )
             if res.status != 0:
@@ -291,10 +312,8 @@ class GnetcliFetcher(Fetcher, AdapterWithConfig, AdapterWithName, ApiMaker):
         downloaded = await api.download(
             hostname=device.fqdn,
             paths=files,
-            host_params=HostParams(
-                credentials=self.conf.make_dev_credentials(),
-                device=gnetcli_device,
-                ip=ip,
+            host_params=self.conf.make_host_params(
+                credentials=self.conf.make_dev_credentials(), device=gnetcli_device, ip=ip
             ),
         )
         res: Dict[str, Optional[str]] = {}
@@ -327,6 +346,8 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
         password: Optional[str] = None,
         dev_login: Optional[str] = None,
         dev_password: Optional[str] = None,
+        dev_port: Optional[int] = None,
+        streamer_type: Optional[Literal["ssh", "telnet"]] = None,
         ssh_agent_enabled: bool = True,
         server_path: Optional[str] = None,
         server_conf: Optional[Config] = DEFAULT_GNETCLI_SERVER_CONF,
@@ -337,6 +358,8 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
             "password": password,
             "dev_login": dev_login,
             "dev_password": dev_password,
+            "dev_port": dev_port,
+            "streamer_type": streamer_type,
             "server_path": server_path,
             "url": url,
             "server_conf": server_conf,
@@ -472,11 +495,7 @@ class GnetcliDeployer(DeployDriver, AdapterWithConfig, AdapterWithName, ApiMaker
     ) -> Exception | None:
         gnetcli_device = breed_to_device.get(device.breed, device.breed)
         ip = get_device_ip(device)
-        host_params = HostParams(
-            credentials=dev_credentials,
-            device=gnetcli_device,
-            ip=ip,
-        )
+        host_params = self.conf.make_host_params(credentials=dev_credentials, device=gnetcli_device, ip=ip)
         command_groups: list[tuple[str, CommandList]]= []
         if isinstance(cmds, dict): # PC
             files = self._get_files(cmds)

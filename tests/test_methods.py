@@ -43,6 +43,69 @@ def test_routeros7_uses_embedded_ros_device():
     assert all(call.kwargs["host_params"].device == "ros" for call in api.cmd.await_args_list)
 
 
+@pytest.mark.parametrize(
+    ("streamer_type", "dev_port", "expected_streamer_type"),
+    [
+        (None, None, pb.StreamerType_ssh),
+        ("ssh", 10022, pb.StreamerType_ssh),
+        ("telnet", 23, pb.StreamerType_telnet),
+    ],
+)
+def test_fetch_propagates_port_and_streamer_type(streamer_type, dev_port, expected_streamer_type):
+    fetcher = GnetcliFetcher(
+        url="127.0.0.1:50050",
+        dev_port=dev_port,
+        streamer_type=streamer_type,
+    )
+    device = SimpleNamespace(breed="jun10", fqdn="router.example.net", primary_ip=None, interfaces=[])
+    api = Mock()
+    api.cmd = AsyncMock(return_value=pb.CMDResult(status=0, out=b"config"))
+
+    result = asyncio.run(fetcher.afetch_dev(api=api, device=device))
+
+    assert result == "config"
+    host_params = api.cmd.await_args.kwargs["host_params"]
+    assert host_params.port == dev_port
+    assert host_params.streamer_type == expected_streamer_type
+
+
+def test_deploy_propagates_port_and_streamer_type():
+    deployer = GnetcliDeployer(
+        url="127.0.0.1:50050",
+        dev_port=23,
+        streamer_type="telnet",
+    )
+    deployer._deploy = AsyncMock(return_value=([], []))
+    device = SimpleNamespace(breed="jun10", fqdn="router.example.net", primary_ip=None, interfaces=[])
+
+    result = asyncio.run(
+        deployer.deploy(
+            api=Mock(),
+            device=device,
+            cmds=CommandList(),
+            args=SimpleNamespace(),
+        )
+    )
+
+    assert result is None
+    host_params = deployer._deploy.await_args.kwargs["host_params"]
+    assert host_params.port == 23
+    assert host_params.streamer_type == pb.StreamerType_telnet
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"dev_port": 0},
+        {"dev_port": 65536},
+        {"streamer_type": "console"},
+    ],
+)
+def test_rejects_invalid_connection_params(params):
+    with pytest.raises(ValueError):
+        GnetcliFetcher(url="127.0.0.1:50050", **params)
+
+
 def test_download_preserves_ok_and_not_found_file_statuses():
     fetcher = GnetcliFetcher(url="127.0.0.1:50050")
     device = SimpleNamespace(breed="pc", fqdn="host.example.net", primary_ip=None, interfaces=[])
